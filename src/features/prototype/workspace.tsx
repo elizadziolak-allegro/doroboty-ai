@@ -291,12 +291,15 @@ export function ApplyPage() {
       return;
     }
     if (run({ type: "submit", jobId: job!.id, notes, generated, answer, consent })) {
-      if (posthogConfigured)
-        posthog?.capture("application_submitted", {
+      if (posthogConfigured) {
+        const attributes = {
           job_category: job!.category,
           job_function: job!.function,
           remote_status: job!.remoteStatus,
-        });
+        };
+        posthog?.capture("application_submitted", attributes);
+        posthog?.logger.info("application submitted", attributes);
+      }
       submittedOnce.current = true;
       setSubmitted(true);
       if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
