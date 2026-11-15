@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { usePostHog } from "@posthog/react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +17,10 @@ import { currentPerson, jobSchema } from "./model";
 import { usePrototype } from "./store";
 import { Field } from "./workspace";
 import { Empty, NotFound, PageTitle } from "./shell";
+
+const posthogConfigured = Boolean(
+  import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN && import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+);
 
 export function EmployerJobs() {
   const { state } = usePrototype();
@@ -68,6 +73,7 @@ export function EmployerJobs() {
 export function EmployerJobEditor() {
   const { id } = useParams();
   const { state, run } = usePrototype();
+  const posthog = usePostHog();
   const person = currentPerson(state)!;
   const navigate = useNavigate();
   const existing = state.jobs.find((x) => x.id === id && x.companyId === person.companyId);
@@ -133,7 +139,18 @@ export function EmployerJobEditor() {
       );
       return;
     }
-    if (run({ type: "publish", job: parsed.data })) navigate("/app/oferty");
+    if (run({ type: "publish", job: parsed.data })) {
+      if (posthogConfigured) {
+        const attributes = {
+          job_category: parsed.data.category,
+          job_function: parsed.data.function,
+          remote_status: parsed.data.remoteStatus,
+        };
+        posthog?.capture("job_published", attributes);
+        posthog?.logger.info("job published", attributes);
+      }
+      navigate("/app/oferty");
+    }
   }
   return (
     <>
@@ -171,6 +188,7 @@ export function EmployerJobEditor() {
                 `${title}\n\nO roli\n${source.trim().slice(0, 10000)}\n\nJak pracujemy\nŁączymy potrzeby użytkowników, odpowiedzialne wykorzystanie AI i mierzalne efekty.\n\nProces rekrutacji\nPrześlij aplikację i opowiedz o projekcie, w którym Twoje decyzje wpłynęły na wynik.`,
               );
               setApproved(false);
+              if (posthogConfigured) posthog?.capture("job_description_generated");
             }}
           >
             Przygotuj opis z AI
@@ -188,6 +206,7 @@ export function EmployerJobEditor() {
                 setDescription(generated);
                 if (!summary) setSummary(source.slice(0, 180));
                 setApproved(false);
+                if (posthogConfigured) posthog?.capture("job_description_applied");
               }}
             >
               Użyj propozycji
@@ -274,6 +293,7 @@ export function EmployerJobEditor() {
 }
 export function CompanyEditor() {
   const { state, run } = usePrototype();
+  const posthog = usePostHog();
   const person = currentPerson(state)!;
   const company = state.companies.find((x) => x.id === person.companyId)!;
   const [message, setMessage] = useState("");
@@ -286,8 +306,13 @@ export function CompanyEditor() {
         name: String(data.get("name")),
         description: String(data.get("description")),
       })
-    )
+    ) {
+      if (posthogConfigured) {
+        posthog?.capture("company_profile_updated");
+        posthog?.logger.info("company profile updated");
+      }
       setMessage("Dane firmy zostały zapisane.");
+    }
   }
   return (
     <>
