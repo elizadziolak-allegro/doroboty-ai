@@ -51,7 +51,12 @@ export function CandidateApplication({ application }: { application: Application
                   variant="destructive"
                   onClick={() => {
                     if (run({ type: "withdraw", applicationId: application.id })) {
-                      if (posthogConfigured) posthog?.capture("application_withdrawn");
+                      if (posthogConfigured) {
+                        posthog?.capture("application_withdrawn");
+                        posthog?.logger.info("application withdrawn", {
+                          workflow: "candidate_application",
+                        });
+                      }
                       focusAfter.current = "status";
                       setConfirming(false);
                       setAnnouncement("Aplikacja została wycofana.");
