@@ -30,5 +30,11 @@ the gate in GitHub Actions before considering the task complete.
   hit a child-process permission error; the authorized rerun passed.
 - `package:participant` produced and verified a baseline-only package in an
   empty temporary directory.
-- Pending clean-checkout validation and GitHub Actions result for the proposed
-  branch. Local test success alone does not prove GitHub CI success.
+- GitHub Actions ran from a clean checkout on the proposed branch. The first
+  run stopped during `npm ci` because 31 lockfile URLs pointed to the company
+  Artifactory. After changing those URLs to the public npm registry without
+  changing package versions or integrity hashes, both checks for the latest
+  pull request commit passed. The complete gate and participant package check
+  succeeded in GitHub Actions.
+- The pull request remains a draft because it also includes newer application
+  and server code. Review that wider scope before merging it into `main`.
