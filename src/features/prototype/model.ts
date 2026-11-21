@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  screeningSchema,
+  validateApproved,
+  validateStructure,
+  type Screening,
+} from "../screening/schema";
 import marketplace from "./data/marketplace.json" with { type: "json" };
 import people from "./data/people.json" with { type: "json" };
 import type { JobWithCompany } from "@/features/jobs/types";
@@ -105,6 +111,7 @@ export const nextStages: Record<Stage, Stage[]> = {
   hired: [],
 };
 const applicationSchema = z.object({
+  screening: screeningSchema.optional(),
   id,
   candidateId: id,
   jobId: id,
@@ -124,6 +131,7 @@ const applicationSchema = z.object({
     .max(30),
 });
 const draftSchema = z.object({
+  screening: screeningSchema.optional(),
   candidateId: id,
   jobId: id,
   notes: text,
@@ -162,6 +170,13 @@ export const stateSchema = z
     for (const j of s.jobs) if (!companyIds.has(j.companyId)) problem("Unknown job company");
     const keys = new Set<string>();
     for (const a of s.applications) {
+      if (a.screening) {
+        try {
+          validateApproved(a.screening);
+        } catch {
+          problem("Invalid screening snapshot");
+        }
+      }
       const key = `${a.candidateId}:${a.jobId}`;
       if (
         !candidates.has(a.candidateId) ||
@@ -184,6 +199,15 @@ export const stateSchema = z
         if (after.at < before.at) problem("Invalid event order");
       }
     }
+    for (const draft of s.drafts) {
+      if (draft.screening) {
+        try {
+          validateStructure(draft.screening);
+        } catch {
+          problem("Invalid screening draft");
+        }
+      }
+    }
     for (const list of [s.saved, s.drafts]) {
       const pairs = new Set<string>();
       for (const item of list) {
@@ -201,7 +225,14 @@ export type Action =
   | { type: "select_person"; id: string | null }
   | { type: "profile"; value: z.infer<typeof profileSchema> }
   | { type: "toggle_saved"; jobId: string }
-  | { type: "draft"; jobId: string; notes: string; generated: string; answer: string }
+  | {
+      type: "draft";
+      jobId: string;
+      notes: string;
+      generated: string;
+      answer: string;
+      screening?: Screening;
+    }
   | {
       type: "submit";
       jobId: string;
@@ -209,6 +240,7 @@ export type Action =
       generated: string;
       answer: string;
       consent: boolean;
+      screening?: Screening;
     }
   | { type: "stage"; applicationId: string; stage: Stage; note: string }
   | { type: "withdraw"; applicationId: string }
@@ -298,8 +330,10 @@ export function transition(
     if (!action.consent) fail("Zatwierdź treść i zgodę na przesłanie aplikacji.");
     if (s.applications.some((x) => x.candidateId === p.id && x.jobId === job.id))
       fail("Aplikacja na tę ofertę została już wysłana.");
+    if (action.screening) validateApproved(action.screening);
     s.applications.push(
       applicationSchema.parse({
+        screening: action.screening,
         id: newId,
         candidateId: p.id,
         jobId: job.id,

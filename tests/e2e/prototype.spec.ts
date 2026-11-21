@@ -3,6 +3,13 @@ import AxeBuilder from "@axe-core/playwright";
 import { initialState } from "../../src/features/prototype/model";
 import { STORAGE_KEY } from "../../src/features/prototype/storage";
 import { readFile } from "node:fs/promises";
+function isPostHogRequest(url: string) {
+  try {
+    return ["eu.i.posthog.com", "eu-assets.i.posthog.com"].includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
 async function choose(page: Page, name: string) {
   await page.goto("/#/auth/sign-in");
   await page.getByRole("button", { name: `Wejdź jako ${name}`, exact: true }).click();
@@ -28,7 +35,8 @@ for (const [name, filename] of [
   }) => {
     const external: string[] = [];
     page.on("request", (request) => {
-      if (!request.url().startsWith("http://127.0.0.1:3106")) external.push(request.url());
+      if (!request.url().startsWith("http://127.0.0.1:3106") && !isPostHogRequest(request.url()))
+        external.push(request.url());
     });
     await choose(page, name);
     await page.goto("/#/app/profil");
@@ -91,7 +99,8 @@ test("published job → saved offer/draft → submitted application → employer
     if (
       !r.url().startsWith("http://127.0.0.1:3106") &&
       !r.url().startsWith("data:") &&
-      !r.url().startsWith("blob:")
+      !r.url().startsWith("blob:") &&
+      !isPostHogRequest(r.url())
     )
       external.push(r.url());
   });
@@ -198,8 +207,7 @@ test("invalid import preserves state, valid import replaces state, reset asks fo
     mimeType: "application/json",
     buffer: Buffer.from('{"version":99}'),
   });
-  await page.getByRole("button", { name: "Importuj", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Nieprawidłowy plik");
+  await expect(page.getByRole("alert")).toContainText("Nie udało się odczytać pliku");
   expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe(before);
   const imported = initialState();
   imported.activePersonId = "candidate-anna";
@@ -213,18 +221,17 @@ test("invalid import preserves state, valid import replaces state, reset asks fo
   await expect(page.getByText("Zaimportowana Anna", { exact: true }).first()).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Eksportuj dane" }).click();
-  expect((await download).suggestedFilename()).toBe("doroboty-scenariusz.json");
+  expect((await download).suggestedFilename()).toBe("doroboty-scenariusz.zip");
   await page.getByRole("button", { name: "Resetuj scenariusz", exact: true }).click();
   await page.getByRole("button", { name: "Anuluj", exact: true }).click();
   await expect(page.getByText("Zaimportowana Anna", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Resetuj scenariusz", exact: true }).click();
   await page.getByRole("button", { name: "Resetuj", exact: true }).click();
-  expect(
-    await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!).activePersonId,
-      STORAGE_KEY,
-    ),
-  ).toBe(null);
+  await expect
+    .poll(() =>
+      page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).activePersonId, STORAGE_KEY),
+    )
+    .toBe(null);
 });
 test("unreadable save stays untouched while the user works in memory", async ({ page }) => {
   await page.goto("/");
@@ -251,12 +258,12 @@ test("storage denial keeps the app usable and offers export", async ({ page }) =
   await page.goto("/#/app/profil");
   await expect(page.getByLabel("Imię i nazwisko")).toHaveValue("Anna Kowalska");
 });
-test("map, hash deep links and unknown records work without external requests", async ({
+test("map, hash deep links and unknown records work without unexpected external requests", async ({
   page,
 }) => {
   const external: string[] = [];
   page.on("request", (r) => {
-    if (r.url().startsWith("https://")) external.push(r.url());
+    if (r.url().startsWith("https://") && !isPostHogRequest(r.url())) external.push(r.url());
   });
   await page.goto("/#/oferty?view=map");
   await page
@@ -390,6 +397,12 @@ for (const width of [1440, 375]) {
     ).toBe(true);
     await answer.focus();
     await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: "Informacje o przyspieszeniu rekrutacji" }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "Rozpocznij", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
     await expect(page.getByRole("checkbox")).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("button", { name: "Wyślij aplikację", exact: true })).toBeFocused();
@@ -397,6 +410,8 @@ for (const width of [1440, 375]) {
     await expect(page.getByRole("button", { name: "Zapisz szkic", exact: true })).toBeFocused();
     const editedAnswer = "Moja poprawiona odpowiedź opisuje doświadczenie potrzebne w tej roli.";
     await answer.fill(editedAnswer);
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
@@ -418,6 +433,8 @@ for (const width of [1440, 375]) {
       fullPage: true,
     });
     await answer.focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
     await page.keyboard.press("Space");
     await page.keyboard.press("Tab");
@@ -609,7 +626,7 @@ test("canonical marketplace typography and search geometry match Poster People b
 
 test("offer section links survive copied URLs and restore section focus through history", async ({
   page,
-  context,
+  browser,
 }) => {
   await page.goto("/#/oferty/ai-product-manager");
   const employer = page.getByRole("link", { name: "O firmie", exact: true });
@@ -619,12 +636,13 @@ test("offer section links survive copied URLs and restore section focus through 
   await page.keyboard.press("Enter");
   await expect(page.locator("#employer")).toBeFocused();
   await expect(page).toHaveURL(/#\/oferty\/ai-product-manager#employer$/);
-  const copied = await context.newPage();
+  const independent = await browser.newContext();
+  const copied = await independent.newPage();
   await copied.goto(destination);
   await expect(copied.locator(".pp-offer-hero h1")).toHaveText("AI Product Manager");
   await expect(copied.locator("#employer")).toBeFocused();
   expect((await copied.locator("#employer").boundingBox())!.y).toBeLessThan(50);
-  await copied.close();
+  await independent.close();
   await page.getByRole("link", { name: "O roli", exact: true }).click();
   await expect(page.locator("#role")).toBeFocused();
   await page.goBack();

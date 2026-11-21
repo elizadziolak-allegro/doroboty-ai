@@ -18,6 +18,11 @@ if (fs.existsSync(target) && fs.readdirSync(target).length)
 verifyPacket(root);
 const entries = [
   "src",
+  "server",
+  "netlify",
+  "netlify.toml",
+  ".env.example",
+  ".gitattributes",
   "public",
   "tests",
   "package.json",
@@ -45,9 +50,14 @@ const entries = [
   "scripts/verify",
   "scripts/package-participant.mjs",
   "scripts/verify-participant.mjs",
+  "scripts/demo-smoke.mjs",
+  "scripts/public-ai-smoke.mjs",
+  "scripts/verify-functions.mjs",
   "docs/architecture.md",
   "docs/design-system",
   "docs/PARTICIPANT_GUIDE.md",
+  "docs/demo-runbook.md",
+  "docs/public-release-runbook.md",
   "docs/SECURITY.md",
   "docs/case",
 ];

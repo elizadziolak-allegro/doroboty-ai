@@ -2,6 +2,7 @@ import type { ReactNode, Ref } from "react";
 import { BackLink } from "@/components/back-link";
 import { ProcessTimeline } from "@/components/process-timeline";
 import { RecordSheet } from "@/components/record-sheet";
+import { ScreeningRecord } from "../screening/record";
 import { CvAttachment } from "./cv-attachment";
 import { MatchScore } from "./match-score";
 import { stageLabels, type Application, type Stage } from "./model";
@@ -24,7 +25,15 @@ export function ApplicationRecord({
 }: {
   application: Pick<
     Application,
-    "candidateId" | "candidateName" | "jobTitle" | "stage" | "answer" | "cv" | "score" | "summary"
+    | "candidateId"
+    | "candidateName"
+    | "jobTitle"
+    | "stage"
+    | "answer"
+    | "cv"
+    | "score"
+    | "summary"
+    | "screening"
   >;
   companyName: string;
   audience: "candidate" | "employer";
@@ -93,6 +102,15 @@ export function ApplicationRecord({
                 </>
               ),
             },
+            ...(application.screening
+              ? [
+                  {
+                    value: "screening",
+                    label: "Pytania AI",
+                    content: <ScreeningRecord screening={application.screening} />,
+                  },
+                ]
+              : []),
           ]}
           footer={footer}
         >

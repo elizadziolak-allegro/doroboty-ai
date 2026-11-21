@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 import { CheckCircle2, FileText } from "lucide-react";
+import { usePostHog } from "@posthog/react";
 import { ConfettiBurst, type ConfettiOrigin } from "@/components/confetti-burst";
 import { BackLink } from "@/components/back-link";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -13,9 +14,16 @@ import { usePrototype } from "./store";
 import { currentPerson, publishedJobs, stageLabels, MIN_APPLICATION_ANSWER_LENGTH } from "./model";
 import { PageTitle, Empty, NotFound, Notice } from "./shell";
 import { CvAttachment } from "./cv-attachment";
+import { ScreeningForm } from "../screening/form";
+import { validateApproved, type Screening } from "../screening/schema";
+import { requireAudio } from "../screening/media";
 import { MatchScore } from "./match-score";
 import { RecruitingApplication } from "./recruiting-application";
 import { CandidateApplication } from "./candidate-application";
+
+const posthogConfigured = Boolean(
+  import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN && import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+);
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -141,6 +149,7 @@ export function WorkspaceHome() {
 }
 export function ProfilePage({ preview = false }: { preview?: boolean }) {
   const { state, run } = usePrototype();
+  const posthog = usePostHog();
   const person = currentPerson(state)!;
   const [message, setMessage] = useState("");
   function save(e: FormEvent<HTMLFormElement>) {
@@ -156,8 +165,10 @@ export function ProfilePage({ preview = false }: { preview?: boolean }) {
           location: String(data.get("location")),
         },
       })
-    )
+    ) {
+      if (posthogConfigured) posthog?.capture("profile_updated");
       setMessage("Profil został zapisany.");
+    }
   }
   return (
     <>
@@ -231,11 +242,21 @@ export function SavedPage() {
 }
 export function ApplyPage() {
   const { slug } = useParams();
+  const { state } = usePrototype();
+  return <ApplyForm key={`${state.activePersonId}:${slug}`} />;
+}
+function ApplyForm() {
+  const { slug } = useParams();
   const { state, run } = usePrototype();
+  const posthog = usePostHog();
   const person = currentPerson(state)!;
   const navigate = useNavigate();
   const job = publishedJobs(state).find((x) => x.slug === slug);
   const draft = state.drafts.find((x) => x.jobId === job?.id && x.candidateId === person.id);
+  const [screening, setScreening] = useState<Screening | undefined>(draft?.screening);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const aiBusyCallback = (busy: boolean) => setAiBusy(busy);
   const notes = draft?.notes ?? "";
   const generated = draft?.generated ?? "";
   const [answer, setAnswer] = useState(draft?.answer ?? "");
@@ -245,6 +266,13 @@ export function ApplyPage() {
   const answerInput = useRef<HTMLTextAreaElement>(null);
   const sendButton = useRef<HTMLButtonElement>(null);
   const submittedOnce = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const [submitted, setSubmitted] = useState(false);
   const [confettiOrigin, setConfettiOrigin] = useState<ConfettiOrigin | null>(null);
   useEffect(() => {
@@ -269,9 +297,9 @@ export function ApplyPage() {
         </Link>
       </section>
     );
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    if (submittedOnce.current) return;
+    if (submittedOnce.current || aiBusy || sending) return;
     setAttempted(true);
     if (answerLength < MIN_APPLICATION_ANSWER_LENGTH) {
       answerInput.current?.focus();
@@ -281,7 +309,28 @@ export function ApplyPage() {
       document.getElementById("application-consent")?.focus();
       return;
     }
-    if (run({ type: "submit", jobId: job!.id, notes, generated, answer, consent })) {
+    setSending(true);
+    try {
+      if (screening) {
+        validateApproved(screening);
+        await requireAudio(screening.answers.flatMap((a) => (a.audioId ? [a.audioId] : [])));
+      }
+    } catch (error) {
+      setMessage((error as Error).message);
+      setSending(false);
+      return;
+    }
+    if (!alive.current) return;
+    if (run({ type: "submit", jobId: job!.id, notes, generated, answer, consent, screening })) {
+      if (posthogConfigured) {
+        const attributes = {
+          job_category: job!.category,
+          job_function: job!.function,
+          remote_status: job!.remoteStatus,
+        };
+        posthog?.capture("application_submitted", attributes);
+        posthog?.logger.info("application submitted", attributes);
+      }
       submittedOnce.current = true;
       setSubmitted(true);
       if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -290,6 +339,7 @@ export function ApplyPage() {
           setConfettiOrigin({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
       }
     }
+    setSending(false);
   }
   return (
     <section className="pp-container application-page">
@@ -328,7 +378,7 @@ export function ApplyPage() {
           >
             <Field label="Dlaczego pasujesz do tej roli?">
               <Textarea
-                disabled={submitted}
+                disabled={submitted || sending || aiBusy}
                 ref={answerInput}
                 required
                 minLength={MIN_APPLICATION_ANSWER_LENGTH}
@@ -352,6 +402,20 @@ export function ApplyPage() {
                 : `Minimum ${MIN_APPLICATION_ANSWER_LENGTH} znaków. Obecnie: ${answerLength}.`}
             </p>
           </section>
+          <ScreeningForm
+            context={{
+              cv: person.cv,
+              job: { title: job.title, description: job.description, summary: job.summary },
+            }}
+            value={screening}
+            disabled={submitted || sending}
+            onBusy={aiBusyCallback}
+            onChange={(next) => {
+              setScreening(next);
+              setConsent(false);
+              run({ type: "draft", jobId: job.id, notes, generated, answer, screening: next });
+            }}
+          />
           <div className="application-form-section application-submit">
             <label className="application-consent">
               <Checkbox
@@ -387,8 +451,14 @@ export function ApplyPage() {
                 disabled={submitted}
                 variant="outline"
                 onClick={() => {
-                  if (run({ type: "draft", jobId: job.id, notes, generated, answer }))
+                  if (run({ type: "draft", jobId: job.id, notes, generated, answer, screening })) {
+                    if (posthogConfigured)
+                      posthog?.capture("application_draft_saved", {
+                        job_category: job.category,
+                        job_function: job.function,
+                      });
                     setMessage("Szkic został zapisany.");
+                  }
                 }}
               >
                 Zapisz szkic
