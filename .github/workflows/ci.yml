@@ -2,7 +2,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   quality:
-    name: Frontend quality
+    name: Full app checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

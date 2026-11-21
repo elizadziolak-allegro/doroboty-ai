@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 3001 --strictPort",
-    "build": "tsc --noEmit && vite build",
+    "dev": "concurrently --kill-others \"npm:dev:web\" \"npm:dev:api\"",
+    "build": "tsc --noEmit && vite build && node scripts/verify-functions.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 3001 --strictPort",
     "start": "npm run preview",
     "lint": "eslint --max-warnings=0 .",
@@ -18,15 +18,22 @@
     "package:participant": "node scripts/package-participant.mjs",
     "verify:packet": "node scripts/verify-participant.mjs",
     "design-system:check": "node docs/design-system/verify-kit.mjs && npm --prefix docs/design-system/agent-kit run check",
-    "design-system:dev": "npm --prefix docs/design-system/agent-kit run dev"
+    "design-system:dev": "npm --prefix docs/design-system/agent-kit run dev",
+    "dev:web": "vite --host 127.0.0.1 --port 3001 --strictPort",
+    "dev:api": "node --watch --env-file-if-exists=.env server/index.ts",
+    "start:api": "node --env-file-if-exists=.env server/index.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
-    "@posthog/react": "^1.11.3",
+    "@netlify/blobs": "11.1.9",
+    "@posthog/react": "1.11.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
+    "concurrently": "^10.0.7",
+    "jszip": "^3.10.2",
     "lucide-react": "^1.52.0",
-    "posthog-js": "^1.450.0",
+    "openai": "^7.53.0",
+    "posthog-js": "1.447.15",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router": "^7.9.0",
@@ -36,6 +43,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9",
+    "@netlify/functions": "6.1.1",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4",
     "@types/node": "^24.19.1",
@@ -45,14 +53,19 @@
     "eslint": "^9",
     "eslint-plugin-react-hooks": "^7.0.0",
     "eslint-plugin-react-refresh": "^0.4.0",
+    "fake-indexeddb": "^6.2.8",
     "globals": "^16.0.0",
     "prettier": "^3.9.9",
-    "shadcn": "^4.21.3",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "typescript-eslint": "^8.0.0",
+    "typescript-eslint": "8.72.2",
     "vite": "^7.0.0",
     "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    }
   },
   "engines": {
     "node": ">=24 <27"

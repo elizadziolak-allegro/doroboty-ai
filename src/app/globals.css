@@ -1,12 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./shadcn-variants.css";
 @import "../../tokens.css";
 @import "./workspace.css";
 @import "./poster-people.css";
 @import "./marketplace.css";
 @import "./records.css";
 @import "./application.css";
+@import "./screening.css";
 @import "./interactions.css";
 
 @theme inline {

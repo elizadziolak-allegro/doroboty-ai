@@ -298,6 +298,7 @@ export function Shell() {
                 <Link to="/oferty">Oferty</Link>
                 <Link to="/metodologia">Metodologia</Link>
                 <Link to="/polityka-prywatnosci">Prywatność</Link>
+                <a href="mailto:eliza.dziolak@gmail.com">Zgłoś problem</a>
                 <Link className="inline-flex items-center gap-1" to="/auth/sign-in">
                   Strefa case <ArrowUpRight className="size-4" />
                 </Link>
@@ -306,6 +307,10 @@ export function Shell() {
             <div className="px-5 py-4 text-xs text-muted-foreground shadow-[var(--gui-divider-top-shadow)] lg:px-8">
               <div className="mx-auto max-w-[1360px]">
                 © {new Date().getFullYear()} DoRoboty.ai — od Superhero.tech
+                <p>
+                  Prototyp szkoleniowy. Używaj wyłącznie fikcyjnych danych. Każda przeglądarka ma
+                  własny scenariusz.
+                </p>
               </div>
             </div>
           </footer>

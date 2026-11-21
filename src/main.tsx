@@ -12,6 +12,37 @@ if (posthogToken && posthogHost) {
   posthog.init(posthogToken, {
     api_host: posthogHost,
     defaults: "2026-08-30",
+    autocapture: {
+      dom_event_allowlist: ["click"],
+      element_allowlist: ["button"],
+      css_selector_allowlist: ["[data-ph-autocapture-safe]"],
+      css_selector_ignorelist: [".ph-no-autocapture", "[data-ph-no-autocapture]"],
+    },
+    capture_pageview: true,
+    disable_session_recording: true,
+    mask_all_text: true,
+    mask_all_element_attributes: true,
+    mask_personal_data_properties: true,
+    before_send: (event) => {
+      if (event.event !== "$autocapture") return event;
+      const { token, distinct_id, $event_type, $session_id, $window_id, $device_id } =
+        event.properties;
+      return {
+        ...event,
+        properties: {
+          token,
+          distinct_id,
+          $event_type,
+          $session_id,
+          $window_id,
+          $device_id,
+          autocapture_target: "public_build_tab",
+        },
+      };
+    },
+    persistence: "memory",
+    disable_surveys: true,
+    advanced_disable_flags: true,
     logs: {
       serviceName: "doroboty-ai-web",
       environment: import.meta.env.MODE,

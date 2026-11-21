@@ -23,9 +23,11 @@ Karolina and Tomasz see their respective companies in the interface; this is rol
 
 ## Save, share and recover
 
-Changes survive reload in this browser. Settings can export a JSON file, import a scenario or reset to fixtures. Import/reset asks before replacing state. If a save is incompatible, download the original before resetting. Storage failure is shown explicitly; export before closing the tab. Use one editing tab at a time.
+Optional “Przyspiesz rekrutację” uses real OpenAI after opt-in, with a server-only key in `.env` (see README). The approved demo uses text answers and candidate approval; voice capture/transcription is disabled. Standard application works without a key. The persistent local allowance is 25 requests at a conservative USD 0.20 reservation per request, at most USD 5 including rehearsals; restarting does not reset it. See [the demo runbook](demo-runbook.md).
 
-A URL shares the interface, not your local changes. To transfer a scenario, share the exported file and import it in the other browser. Exports include all personas, applications and notes; never enter real personal data.
+Changes survive reload in this browser. Settings can export a ZIP including existing audio, import ZIP/legacy JSON, or reset the scenario and recordings. Import/reset asks before replacing state. If a save is incompatible, download the original before resetting. Storage failure is shown explicitly; export before closing the tab. Only one tab in the same browser profile can open the scenario for editing. Close the first tab and choose “Spróbuj ponownie” in the second to continue there.
+
+A URL shares the interface, not your local changes. To transfer a scenario, share the exported file and import it in the other browser. Exports include all personas, applications, notes and referenced recordings; never enter real personal data.
 
 ## Static build
 

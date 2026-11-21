@@ -27,6 +27,7 @@ import { usePrototype } from "./store";
 import { currentPerson, publishedJobs } from "./model";
 import { NotFound } from "./shell";
 import { cn } from "@/lib/utils";
+import { safeWebsiteUrl } from "@/lib/safe-url";
 
 const posthogConfigured = Boolean(
   import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN && import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
@@ -233,6 +234,7 @@ export function JobsPage() {
             ).map(([key, label, description]) => (
               <button
                 key={key}
+                data-ph-autocapture-safe={key === "build" ? "true" : undefined}
                 className={cn("pp-category-tab", (filters.category ?? "") === key && "pp-selected")}
                 aria-pressed={(filters.category ?? "") === key}
                 onClick={() => change("category", key)}
@@ -556,10 +558,10 @@ export function CompanyPage() {
               <dd className="mt-1 text-muted-foreground">{company.sizeLabel}</dd>
             </div>
           </div>
-          {/^https?:\/\//i.test(company.websiteUrl) && (
+          {safeWebsiteUrl(company.websiteUrl) && (
             <a
               className="mt-6 inline-flex items-center gap-2 font-medium text-[var(--gui-link)] hover:underline"
-              href={company.websiteUrl}
+              href={safeWebsiteUrl(company.websiteUrl)!}
               target="_blank"
               rel="noreferrer"
             >

@@ -2,7 +2,15 @@ import { useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { usePrototype } from "./store";
-import { serializeState, MAX_IMPORT_BYTES } from "./storage";
+import { MAX_IMPORT_BYTES, parseState } from "./storage";
+import {
+  exportArchive,
+  prepareArchive,
+  stageImportedMedia,
+  MAX_ARCHIVE_BYTES,
+  type PreparedImport,
+} from "../screening/archive";
+import { clearAudio } from "../screening/media";
 import { PageTitle } from "./shell";
 
 export function downloadText(name: string, text: string, type = "application/json") {
@@ -18,7 +26,8 @@ export function downloadText(name: string, text: string, type = "application/jso
 export function SettingsPage() {
   const { state, reset, importState, original } = usePrototype();
   const [pending, setPending] = useState<"reset" | "import" | null>(null);
-  const [raw, setRaw] = useState("");
+  const [prepared, setPrepared] = useState<PreparedImport>({ raw: "", media: [] });
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   async function readFile(e: ChangeEvent<HTMLInputElement>) {
@@ -26,25 +35,45 @@ export function SettingsPage() {
     e.target.value = "";
     setError("");
     if (!file) return;
-    if (file.size > MAX_IMPORT_BYTES) {
-      setError("Plik jest za duży (maksymalnie 2 MB).");
+    const isZip = file.name.toLowerCase().endsWith(".zip");
+    if (file.size > (isZip ? MAX_ARCHIVE_BYTES : MAX_IMPORT_BYTES)) {
+      setError("Plik jest za duży (JSON: 2 MB, ZIP: 64 MB).");
       return;
     }
     try {
-      setRaw(await file.text());
+      setBusy(true);
+      if (isZip) setPrepared(await prepareArchive(await file.arrayBuffer()));
+      else {
+        const raw = await file.text();
+        parseState(raw);
+        setPrepared({ raw, media: [] });
+      }
       setPending("import");
     } catch {
-      setError("Nie udało się odczytać pliku.");
+      setError(
+        "Nie udało się odczytać pliku. Sprawdź format paczki; dotychczasowy scenariusz pozostał bez zmian.",
+      );
+    } finally {
+      setBusy(false);
     }
   }
-  function confirm() {
-    if (pending === "reset") {
-      reset();
-      setMessage("Przywrócono scenariusz początkowy.");
-    } else if (importState(raw)) {
-      setMessage("Dane zostały zaimportowane.");
+  async function confirm() {
+    setBusy(true);
+    setError("");
+    try {
+      if (pending === "reset") {
+        await clearAudio();
+        reset();
+        setMessage("Przywrócono scenariusz początkowy.");
+      } else if (importState(await stageImportedMedia(prepared))) {
+        setMessage("Dane zostały zaimportowane.");
+      }
+      setPending(null);
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setBusy(false);
     }
-    setPending(null);
   }
   return (
     <>
@@ -53,21 +82,40 @@ export function SettingsPage() {
         <h2>Dane scenariusza</h2>
         <p>
           Zmiany są zapisane tylko w tej przeglądarce. Wysłanie linku innej osobie nie przenosi
-          Twoich danych. Eksport pozwala przekazać scenariusz lub zachować kopię przed resetem.
+          Twoich danych. Eksport ZIP pozwala przekazać scenariusz z nagraniami lub zachować kopię
+          przed resetem. Import obsługuje także stare pliki JSON.
         </p>
         <div className="flex flex-wrap gap-3">
           <Button
             variant="outline"
-            onClick={() => downloadText("doroboty-scenariusz.json", serializeState(state))}
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                const blob = await exportArchive(state);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "doroboty-scenariusz.zip";
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              } catch (error) {
+                setError((error as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
           >
             Eksportuj dane
           </Button>
-          <Button variant="outline" render={<label />}>
+          <Button variant="outline" render={<label />} disabled={busy}>
             Importuj dane
             <input
               className="sr-only"
               type="file"
-              accept="application/json,.json"
+              accept="application/json,.json,.zip,application/zip"
+              disabled={busy}
               aria-label="Importuj plik scenariusza"
               onChange={readFile}
             />
@@ -83,7 +131,7 @@ export function SettingsPage() {
             </Button>
           )}
         </div>
-        <Button variant="destructive" onClick={() => setPending("reset")}>
+        <Button disabled={busy} variant="destructive" onClick={() => setPending("reset")}>
           Resetuj scenariusz
         </Button>
         {error && (
@@ -96,8 +144,8 @@ export function SettingsPage() {
       <section className="prototype-panel prototype-form mt-6">
         <h2>O prototypie</h2>
         <p>
-          Wybór osoby zastępuje logowanie. Propozycje AI, Match Score i podsumowania odtwarzają
-          przygotowany scenariusz; nie oceniają kompetencji. Używaj przykładowych danych i CV.
+          Wybór osoby zastępuje logowanie. Sekcja „Przyspiesz rekrutację” korzysta z OpenAI. Match
+          Score i wcześniejsze podsumowania pozostają przykładowe. Używaj przykładowych danych i CV.
         </p>
       </section>
       <ConfirmDialog
@@ -108,7 +156,8 @@ export function SettingsPage() {
         title={pending === "reset" ? "Zresetować scenariusz?" : "Zastąpić dane scenariusza?"}
         description="Ta operacja zastąpi lokalne zmiany. Możesz najpierw wyeksportować dane."
         label={pending === "reset" ? "Resetuj" : "Importuj"}
-        pending={false}
+        pending={busy}
+        error={error || undefined}
         onConfirm={confirm}
       />
     </>
@@ -124,9 +173,16 @@ export function PrivacyPage() {
           ani poufnych informacji.
         </p>
         <p>
-          Profile, aplikacje i ustawienia pozostają w pamięci tej przeglądarki. Aplikacja nie wysyła
-          ich do bazy, dostawcy AI ani systemu analitycznego. Plik eksportu zawiera cały lokalny
-          scenariusz, w tym notatki.
+          Profile, treść aplikacji i ustawienia pozostają w pamięci tej przeglądarki; nie trafiają
+          do bazy. PostHog Cloud EU otrzymuje odsłony stron i zdarzenia użycia, takie jak wyszukanie
+          lub wysłanie aplikacji. Zdarzenia mogą zawierać identyfikator wybranej fikcyjnej osoby,
+          jej rolę oraz kategorię oferty lub etap rekrutacji. Nie zawierają treści profilu, CV,
+          odpowiedzi ani notatek. Automatycznie rejestrujemy wyłącznie kliknięcie publicznego
+          przycisku „Build” na liście ofert; formularze i ekrany z prywatnymi informacjami są z tego
+          wyłączone. Nie nagrywamy sesji. Po dobrowolnym uruchomieniu pytań AI treść CV i oferty
+          oraz odpowiedzi do podsumowania są przekazywane do OpenAI przez serwer aplikacji. Ten
+          pokaz korzysta wyłącznie z odpowiedzi tekstowych. Eksport ZIP zawiera scenariusz, notatki
+          i ewentualne nagrania zachowane ze starszych wersji.
         </p>
         <p>
           Możesz usunąć zmiany przyciskiem „Resetuj scenariusz” w ustawieniach lub wyczyścić dane
